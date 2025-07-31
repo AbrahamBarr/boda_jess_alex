@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Invitación de Boda</title>
+<style>
+    @font-face {
+        font-family: 'Amsterdam Four';
+        src: url('/static/fonts/Amsterdam.otf') format('opentype');
+        font-weight: normal;
+        font-style: normal;
+    }
+
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Arial';
+        text-align: center;
+        background-color: #f9f9f9;
+    }
+
+    .svg-container {
+        position: relative;
+        width: 100%;
+        max-width: 800px;
+        margin: 0 auto;
+    }
+
+    .svg-container img {
+        width: 100%;
+    }
+
+    .formulario {
+        margin-top: 30px;
+        padding: 20px;
+        background-color: #1c1c1c;
+        color: white;
+        display: inline-block;
+        border-radius: 10px;
+    }
+
+    #contador {
+        position: absolute;
+        top: 28%;
+        left: 50%;
+        transform: translateX(-50%) scaleY(0.80);
+        font-size: 2.3rem;
+        color: #f9f9f9;
+        font-family: 'Amsterdam Four', cursive;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-shadow: 0 0 0.5px rgba(0, 0, 0, 0.1);
+    }
+
+    .formulario-flotante {
+        position: absolute;
+        top: 51%;
+        left: 50%;
+        transform: translateX(-50%);
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+        width: 80%;
+        max-width: 400px;
+        box-shadow: none;
+        background-color: transparent;
+        
+    }
+
+    select {
+        background-color: transparent;
+        color: white;
+        border: 1px solid white;
+        border-radius: 5px;
+        padding: 8px;
+        font-size: 1rem;
+        appearance: none; 
+    }
+
+    .formulario-flotante label {
+        margin-bottom: 10px;
+        display: block;
+        border: none;
+        border-top: none;
+        text-decoration: none;
+        background: transparent;
+    }
+
+    .formulario-flotante form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px; /* Espacio uniforme entre elementos */
+    }
+    .formulario-flotante input,
+    .formulario-flotante button {
+        width: 100%;
+        box-sizing: border-box;
+        border-top: none;
+    }
+    .sugerencias {
+        list-style: none;
+        padding: 0;
+        margin: 5px 0 0;
+        background-color: #fff;
+        color: #000;
+        border: 1px solid #ccc;
+        max-height: 150px;
+        overflow-y: auto;
+        position: absolute;
+        width: 100%;
+        z-index: 10;
+    }
+    .sugerencias li {
+        padding: 8px;
+        cursor: pointer;
+    }
+
+    .sugerencias li:hover {
+        background-color: #eee;
+    }
+
+
+</style>
+
+</head>
+<body>
+
+    <div class="svg-container">
+        <img src="/static/invitacion.png" alt="Invitación">
+
+        <div id="contador">Faltan 0 días</div>
+
+        <div class="formulario-flotante">
+            <form action="/confirmar" method="post">
+                <label for="nombre">Nombre:</label>
+                <input type="text" name="nombre" id="nombre" autocomplete="off" required aria-label="Buscar nombre o familia">
+                <ul id="sugerencias" class="sugerencias"></ul>
+
+                <label for="asistentes">¿Cuántos asistirán?</label>
+                <input type="number" name="asistentes" id="asistentes" min="1" max="5" required>
+
+                <button type="submit">Confirmar</button>
+            </form>
+        </div>
+    </div>
+
+
+    <script>
+        const fechaEvento = new Date("{{ event_date }}T00:00:00").getTime();
+        const contador = document.getElementById("contador");
+
+        setInterval(() => {
+            const ahora = new Date().getTime();
+            const restante = fechaEvento - ahora;
+
+            const dias = Math.floor(restante / (1000 * 60 * 60 * 24));
+            const horas = Math.floor((restante % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutos = Math.floor((restante % (1000 * 60 * 60)) / (1000 * 60));
+            const segundos = Math.floor((restante % (1000 * 60)) / 1000);
+
+            contador.innerHTML = `Faltan ${dias} días, ${horas} horas ${minutos} minutos ${segundos} segundos`;
+        }, 1000);
+    </script>
+
+    <script>
+            const boletosPorInvitado = {{ invitados | tojson }};
+            const nombreInput = document.getElementById("nombre");
+            const asistentesInput = document.getElementById("asistentes");
+            const sugerencias = document.getElementById("sugerencias");
+
+// Mostrar sugerencias mientras escribe
+            nombreInput.addEventListener("input", function () {
+                const texto = nombreInput.value.toLowerCase();
+                sugerencias.innerHTML = "";
+
+                Object.keys(boletosPorInvitado).forEach(nombre => {
+                    if (nombre.toLowerCase().includes(texto) && texto.length > 0) {
+                        const li = document.createElement("li");
+                        li.textContent = nombre;
+                        li.addEventListener("click", function () {
+                            nombreInput.value = nombre;
+                            sugerencias.innerHTML = "";
+
+                            const boletos = boletosPorInvitado[nombre];
+                            asistentesInput.value = boletos;
+                            asistentesInput.max = boletos;
+                        });
+                        sugerencias.appendChild(li);
+                    }
+                });
+            });
+
+            // Ocultar sugerencias si pierde foco
+            document.addEventListener("click", function (e) {
+                if (e.target !== nombreInput) {
+                    sugerencias.innerHTML = "";
+                }
+        });
+    </script>
+
+
+
+</body>
+</html>

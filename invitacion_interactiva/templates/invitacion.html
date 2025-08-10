@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Invitación de Boda</title>
+<style>
+    @font-face {
+        font-family: 'Amsterdam Four';
+        src: url('/static/fonts/Amsterdam.otf') format('opentype');
+        font-weight: normal;
+        font-style: normal;
+    }
+
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Arial';
+        text-align: center;
+        background-image: url('/static/invitacion.png'); 
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-position: center;
+        min-height: 100vh;
+        width: 100%;
+    }
+
+    .svg-container {
+        position: relative;
+        width: 100%;
+        max-width: none;
+        margin: 0 auto;
+    }
+
+    .svg-container img {
+        width: 100%;
+    }
+
+    .formulario {
+        margin-top: 30px;
+        padding: 20px;
+        background-color: #1c1c1c;
+        color: white;
+        display: inline-block;
+        border-radius: 10px;
+    }
+
+    #contador {
+        position: absolute;
+        top: 33%;
+        left: 50%;
+        transform: translateX(-50%) scaleY(0.80);
+        font-size: 2.3rem;
+        color: #f9f9f9;
+        font-family: 'Amsterdam Four', cursive;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-shadow: 0 0 0.5px rgba(0, 0, 0, 0.1);
+    }
+
+    .formulario-flotante {
+        position: absolute;
+        top: 61%;
+        left: 50%;
+        transform: translateX(-50%);
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+        width: 80%;
+        max-width: 400px;
+        box-shadow: none;
+        background-color: transparent;
+        
+    }
+
+    select {
+        background-color: transparent;
+        color: white;
+        border: 1px solid white;
+        border-radius: 5px;
+        padding: 8px;
+        font-size: 1rem;
+        appearance: none; 
+    }
+
+    .formulario-flotante label {
+        margin-bottom: 10px;
+        display: block;
+        border: none;
+        border-top: none;
+        text-decoration: none;
+        background: transparent;
+    }
+
+    .formulario-flotante form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px; /* Espacio uniforme entre elementos */
+    }
+    .formulario-flotante input,
+    .formulario-flotante button {
+        width: 100%;
+        box-sizing: border-box;
+        border-top: none;
+    }
+    .sugerencias {
+        list-style: none;
+        padding: 0;
+        margin: 5px 0 0;
+        background-color: #fff;
+        color: #000;
+        border: 1px solid #ccc;
+        max-height: 150px;
+        overflow-y: auto;
+        position: absolute;
+        width: 100%;
+        z-index: 10;
+    }
+    .sugerencias li {
+        padding: 8px;
+        cursor: pointer;
+    }
+
+    .sugerencias li:hover {
+        background-color: #eee;
+    }
+
+
+</style>
+
+</head>
+<body>
+
+<div class="svg-container">
+    <div id="contador">Faltan 0 días</div>
+
+    <div class="formulario-flotante">
+        <form action="/confirmar" method="post">
+            <label for="nombre">Nombre:</label>
+            <input type="text" name="nombre" id="nombre" list="lista-nombres" autocomplete="off" required aria-label="Buscar nombre o familia">
+            <datalist id="lista-nombres">
+                {% for g in nombres_grupo %}
+                  <option value="{{ g }}"></option>
+                {% endfor %}
+            </datalist>
+
+            <label for="asistentes">¿Cuántos asistirán?</label>
+            <input type="number" name="asistentes" id="asistentes" min="1" required>
+            <div id="hint-max" style="font-size:.9rem; opacity:.8; margin-top:4px;"></div>
+
+            {% if error %}
+                <div style="color:#b00020; margin-top:10px;">{{ error }}</div>
+            {% endif %}
+
+            <button type="submit">Confirmar</button>
+        </form>
+    </div>
+</div>
+
+<script>
+    // === Contador regresivo ===
+    const fechaEvento = new Date("{{ event_date }}T00:00:00").getTime();
+    const contador = document.getElementById("contador");
+
+    setInterval(() => {
+        const ahora = new Date().getTime();
+        const restante = fechaEvento - ahora;
+
+        const dias = Math.floor(restante / (1000 * 60 * 60 * 24));
+        const horas = Math.floor((restante % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutos = Math.floor((restante % (1000 * 60 * 60)) / (1000 * 60));
+        const segundos = Math.floor((restante % (1000 * 60)) / 1000);
+
+        contador.innerHTML = `Faltan ${dias} días, ${horas} horas ${minutos} minutos ${segundos} segundos`;
+    }, 1000);
+</script>
+
+<script>
+    // === Lógica para aplicar límite según Excel ===
+    const limites = {{ limites_json|safe }};
+    const nombreInput = document.getElementById('nombre');
+    const asistentesInput = document.getElementById('asistentes');
+    const hint = document.getElementById('hint-max');
+
+    function getMax(nombre) {
+        return Number.isFinite(limites[nombre]) ? parseInt(limites[nombre], 10) : 0;
+    }
+
+    function aplicarLimite() {
+        const nombre = (nombreInput?.value || '').trim();
+        const max = getMax(nombre);
+
+        if (asistentesInput) {
+            asistentesInput.setAttribute('max', max);
+            const val = parseInt(asistentesInput.value || '0', 10);
+            if (!Number.isNaN(val) && val > max) {
+                asistentesInput.value = max;
+            }
+        }
+        if (hint) {
+            hint.textContent = max > 0
+                ? `Máximo permitido para “${nombre}”: ${max}`
+                : (nombre ? `No encontramos límite para “${nombre}”. Verifica el nombre tal como aparece en tu invitación.` : '');
+        }
+    }
+
+    nombreInput?.addEventListener('change', aplicarLimite);
+    nombreInput?.addEventListener('input', aplicarLimite);
+    nombreInput?.addEventListener('blur', aplicarLimite);
+    asistentesInput?.addEventListener('input', aplicarLimite);
+
+    {% if nombre_valor %} if (nombreInput) nombreInput.value = {{ nombre_valor|tojson }}; {% endif %}
+    {% if asistentes_valor %} if (asistentesInput) asistentesInput.value = {{ asistentes_valor }}; {% endif %}
+
+    aplicarLimite();
+</script>
+
+</body>
+</html>

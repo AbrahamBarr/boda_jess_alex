@@ -68,7 +68,7 @@
     .formulario-flotante{
         position:absolute;
         left:50%;
-        top:55%;          
+        top:53%;          
         transform:translateX(-50%);
         width:min(420px, 88%);
         background:transparent;
@@ -92,6 +92,7 @@
         border-top: none;
         text-decoration: none;
         background: transparent;
+        color:#fff;
     }
 
     .formulario-flotante form {
@@ -99,11 +100,26 @@
         flex-direction: column;
         gap: 12px; /* Espacio uniforme entre elementos */
     }
-    .formulario-flotante input,
-    .formulario-flotante button {
-        width: 100%;
-        box-sizing: border-box;
-        border-top: none;
+    .formulario-flotante input{
+        color:#fff;                        
+        background: rgba(0,0,0,.25);       
+        border: 1px solid rgba(255,255,255,.6);
+        border-radius: 6px;
+        padding:10px 12px;
+
+    }
+
+    .formulario-flotante input::placeholder{
+        color: rgba(255,255,255,.85);
+    }
+
+    .formulario-flotante button{
+        background: rgba(255,255,255,.9);
+        color:#111;
+        border: none;
+        border-radius: 6px;
+        padding:10px 12px;
+        cursor:pointer;
     }
     .sugerencias {
         list-style: none;
@@ -129,7 +145,7 @@
 
    @media (max-width: 480px){
         #contador{ top:27.5%; font-size:1.6rem; }
-        .formulario-flotante{ top:55.5%; width:90%; }
+        .formulario-flotante{ top:54%; width:90%; }
     }
 
 </style>

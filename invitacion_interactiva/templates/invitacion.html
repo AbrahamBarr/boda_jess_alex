@@ -61,7 +61,7 @@
         color:#f9f9f9;
         font-family:'Amsterdam Four', cursive;
         white-space:nowrap;
-        text-shadow:0 0 .5px white(0,0,0,.1);
+        text-shadow: 0 0 .5px rgba(0,0,0,.1);
         z-index:1;
     }
 
@@ -98,7 +98,8 @@
     .formulario-flotante form {
         display: flex;
         flex-direction: column;
-        gap: 12px; /* Espacio uniforme entre elementos */
+        gap: 12px;
+        position: relative;
     }
     .formulario-flotante input{
         color:#fff;                        
@@ -161,12 +162,12 @@
     <div class="formulario-flotante">
         <form action="/confirmar" method="post">
             <label for="nombre">Nombre:</label>
-            <input type="text" name="nombre" id="nombre" list="lista-nombres" autocomplete="off" required aria-label="Buscar nombre o familia">
-            <datalist id="lista-nombres">
-                {% for g in nombres_grupo %}
+            <input type="text" name="nombre" id="nombre" autocomplete="off" required aria-label="Buscar nombre o familia" placeholder="Escribe el nombre tal como aparece">
+            <ul id="sugerencias" class="sugerencias" hidden></ul>
+                <!-- {% for g in nombres_grupo %}
                   <option value="{{ g }}"></option>
                 {% endfor %}
-            </datalist>
+            </datalist> -->
 
             <label for="asistentes">¿Cuántos asistirán?</label>
             <input type="number" name="asistentes" id="asistentes" min="1" required>
@@ -238,6 +239,51 @@
 
     aplicarLimite();
 </script>
+
+<script>
+  // Nombres desde el backend
+  const nombres = {{ nombres_grupo | tojson }};
+  const sugerencias = document.getElementById('sugerencias');
+
+  function renderSugerencias(query){
+    sugerencias.innerHTML = '';
+    if (!query) { sugerencias.hidden = true; return; }
+
+    const q = query.toLowerCase();
+    // Muestra solo primeras 12 coincidencias
+    const hits = nombres.filter(n => n.toLowerCase().includes(q)).slice(0, 12);
+
+    if (hits.length === 0) { sugerencias.hidden = true; return; }
+
+    hits.forEach(nombre => {
+      const li = document.createElement('li');
+      li.textContent = nombre;
+      // Usamos mousedown para que no se pierda el foco del input antes del click
+      li.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        nombreInput.value = nombre;
+        sugerencias.hidden = true;
+        aplicarLimite(); // aplica el máximo al campo asistentes
+      });
+      sugerencias.appendChild(li);
+    });
+    sugerencias.hidden = false;
+  }
+
+  // Mostrar solo al escribir
+  nombreInput.addEventListener('input', () => renderSugerencias(nombreInput.value));
+
+  // Ocultar al hacer click fuera
+  document.addEventListener('click', (e) => {
+    if (!sugerencias.contains(e.target) && e.target !== nombreInput) {
+      sugerencias.hidden = true;
+    }
+  });
+
+  // Ocultar al perder foco (un pequeño delay por si se hace click en una sugerencia)
+  nombreInput.addEventListener('blur', () => setTimeout(() => (sugerencias.hidden = true), 100));
+</script>
+
 
 </body>
 </html>

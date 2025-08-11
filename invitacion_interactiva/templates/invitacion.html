@@ -13,25 +13,27 @@
     body {
         margin: 0;
         padding: 0;
-        font-family: 'Arial';
+        font-family: Arial, sans-serif;
         text-align: center;
-        background-image: url('/static/invitacion.png'); 
+        /* background-image: url('/static/invitacion.png'); 
         background-size: cover;
         background-repeat: no-repeat;
         background-position: center;
         min-height: 100vh;
-        width: 100%;
+        width: 100%; */
     }
 
-    .svg-container {
+    .svg-container{
         position: relative;
         width: 100%;
-        max-width: none;
+        max-width: 900px;
         margin: 0 auto;
     }
-
-    .svg-container img {
-        width: 100%;
+        
+    .svg-container::before{
+        content: "";
+        display: block;
+        padding-top: 170%;
     }
 
     .formulario {
@@ -43,33 +45,34 @@
         border-radius: 10px;
     }
 
-    #contador {
-        position: absolute;
-        top: 53%;
-        left: 50%;
-        transform: translateX(-50%) scaleY(0.80);
-        font-size: 2.3rem;
-        color: #f9f9f9;
-        font-family: 'Amsterdam Four', cursive;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        text-shadow: 0 0 0.5px rgba(0, 0, 0, 0.1);
+    .invite-bg{
+        position: absolute; inset: 0;
+        background: url("/static/invitacion.png") center/contain no-repeat;
+        z-index: 0;
+        pointer-events:none;
     }
 
-    .formulario-flotante {
-        position: absolute;
-        top: 81%;
-        left: 50%;
-        transform: translateX(-50%);
-        color: white;
-        padding: 20px;
-        border-radius: 10px;
-        width: 80%;
-        max-width: 400px;
-        box-shadow: none;
-        background-color: transparent;
-        
+    #contador{
+        position:absolute;
+        left:50%;
+        top:28%;     
+        transform:translateX(-50%) scaleY(.80);
+        font-size:2.3rem;
+        color:#f9f9f9;
+        font-family:'Amsterdam Four', cursive;
+        white-space:nowrap;
+        text-shadow:0 0 .5px rgba(0,0,0,.1);
+        z-index:1;
+    }
+
+    .formulario-flotante{
+        position:absolute;
+        left:50%;
+        top:55%;          
+        transform:translateX(-50%);
+        width:min(420px, 88%);
+        background:transparent;
+        z-index:1;
     }
 
     select {
@@ -124,6 +127,10 @@
         background-color: #eee;
     }
 
+   @media (max-width: 480px){
+        #contador{ top:29%; font-size:1.6rem; }
+        .formulario-flotante{ top:56%; width:90%; }
+    }
 
 </style>
 
@@ -131,7 +138,9 @@
 <body>
 
 <div class="svg-container">
-    <div id="contador">Faltan 0 días</div>
+  <div class="invite-bg"></div>
+
+  <div id="contador">Faltan 0 días</div>
 
     <div class="formulario-flotante">
         <form action="/confirmar" method="post">

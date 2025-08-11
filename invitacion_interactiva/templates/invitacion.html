@@ -45,11 +45,13 @@
         border-radius: 10px;
     }
 
-    .invite-bg{
-        position: absolute; inset: 0;
-        background: url("/static/invitacion.png") center/contain no-repeat;
+    .invite-bg {
+        position: absolute;
+        inset: 0;
+        background: url("/static/invitacion.png") center/cover no-repeat; /* cambia contain → cover */
         z-index: 0;
-        pointer-events:none;
+        pointer-events: none;
+        background-color: #000; /* opcional, rellena espacios si quedan */
     }
 
     #contador{

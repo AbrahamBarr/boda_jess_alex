@@ -1,10 +1,27 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="utf-8">
     <title>¡Gracias por confirmar!</title>
+    <style>
+      body { font-family: Arial, sans-serif; text-align: center; padding: 40px; }
+      .msg { max-width: 560px; margin: 0 auto; }
+    </style>
 </head>
 <body>
+  <div class="msg">
     <h1>¡Gracias, {{ nombre }}!</h1>
-    <p>Hemos recibido tu confirmación. ¡Nos encantará verte en nuestra boda!</p>
+
+    {% if asistentes == 0 %}
+      <p>Lamentamos que no puedan acompañarnos ese día 💔.<br>
+      Gracias por confirmarlo; les mandamos un fuerte abrazo.</p>
+    {% else %}
+      <p>Hemos recibido tu confirmación 🎉<br>
+      ¡Nos encantará verlos en nuestra boda!</p>
+    {% endif %}
+
+    <p><small>Resumen: asistentes registrados = <strong>{{ asistentes }}</strong></small></p>
+    <p><a href="/">Regresar</a></p>
+  </div>
 </body>
 </html>

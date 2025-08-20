@@ -144,10 +144,48 @@
         background-color: #eee;
     }
 
-   @media (max-width: 480px){
+    @media (max-width: 480px){
         #contador{ top:27.5%; font-size:1.6rem; }
         .formulario-flotante{ top:54%; width:90%; }
     }
+
+    .boton-calendario {
+        display: inline-block;
+        padding: 8px 14px;
+        background-color: #d4af37; /* dorado */
+        color: white;
+        border-radius: 6px;
+        font-size: 14px;
+        text-decoration: none;
+    }
+    .boton-calendario:hover {
+        background-color: #b9982f;
+    }
+
+    .boton-calendario-fixed{
+        position:absolute;
+        left:23%;      
+        bottom:2.5%;     
+        display:inline-block;
+        padding:8px 12px;
+        background-color:transparent;
+        color:#fff;
+        border-radius:6px;
+        font-size:14px;
+        text-decoration:none;
+        z-index:1;   
+    }
+    .boton-calendario-fixed:hover{ background-color:transparent; }
+
+    @media (max-width:480px){
+    .boton-calendario-fixed{
+        left:10%;
+        bottom:1.5%;
+        font-size:13px;
+        padding:7px 10px;
+    }
+    }
+
 
 </style>
 
@@ -163,7 +201,7 @@
         <form action="/confirmar" method="post">
             <label for="nombre">Nombre:</label>
             <input type="text" name="nombre" id="nombre" autocomplete="off" required aria-label="Buscar nombre o familia" placeholder="Escriba su nombre o apellido">
-            <ul id="sugerencias" class="sugerencias" hidden></ul>
+            <ul id="sugerencias" class="sugerencias" hidden role="listbox" aria-label="Sugerencias de nombre"></ul>
                 <!-- {% for g in nombres_grupo %}
                   <option value="{{ g }}"></option>
                 {% endfor %}
@@ -182,25 +220,35 @@
             <button type="submit">Confirmar</button>
         </form>
     </div>
+
+    <a 
+        href="/static/boda_jessica_alejandro.ics" 
+        download="boda_jessica_alejandro.ics"
+        class="boton-calendario-fixed"
+    >
+        📅 Agregar al Calendario
+    </a>
+
 </div>
 
+
+
 <script>
-    // === Contador regresivo ===
-    const fechaEvento = new Date("{{ event_date }}T00:00:00").getTime();
-    const contador = document.getElementById("contador");
+  const base = new Date("{{ event_date }}"); // ej. 2025-11-15 (local)
+  base.setHours(18, 0, 0, 0);                // 18:00:00
+  const fechaEvento = base.getTime();        // <-- en vez de "...T00:00:00"
+  const contador = document.getElementById("contador");
 
-    setInterval(() => {
-        const ahora = new Date().getTime();
-        const restante = fechaEvento - ahora;
-
-        const dias = Math.floor(restante / (1000 * 60 * 60 * 24));
-        const horas = Math.floor((restante % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-        const minutos = Math.floor((restante % (1000 * 60 * 60)) / (1000 * 60));
-        const segundos = Math.floor((restante % (1000 * 60)) / 1000);
-
-        contador.innerHTML = `Faltan ${dias} días, ${horas} horas ${minutos} minutos ${segundos} segundos`;
-    }, 1000);
+  setInterval(() => {
+    const restante = fechaEvento - Date.now();
+    const dias = Math.floor(restante / (1000*60*60*24));
+    const horas = Math.floor((restante % (1000*60*60*24)) / (1000*60*60));
+    const minutos = Math.floor((restante % (1000*60*60)) / (1000*60));
+    const segundos = Math.floor((restante % (1000*60)) / 1000);
+    contador.textContent = `Faltan ${dias} días, ${horas} horas ${minutos} minutos ${segundos} segundos`;
+  }, 1000);
 </script>
+
 
 <script>
     // === Lógica para aplicar límite según Excel ===
@@ -210,7 +258,8 @@
     const hint = document.getElementById('hint-max');
 
     function getMax(nombre) {
-        return Number.isFinite(limites[nombre]) ? parseInt(limites[nombre], 10) : 0;
+        const key = Object.keys(limites).find(k => k.toLowerCase() === (nombre||'').toLowerCase());
+        return Number.isFinite(limites[key]) ? parseInt(limites[key], 10) : 0;
     }
 
     function aplicarLimite() {
@@ -236,7 +285,7 @@
     nombreInput?.addEventListener('blur', aplicarLimite);
     asistentesInput?.addEventListener('input', aplicarLimite);
 
-    {% if nombre_valor %} if (nombreInput) nombreInput.value = {{ nombre_valor|tojson }}; {% endif %}
+    {% if nombre_valor %} if (nombreInput) nombreInput.value = {{ nombre_valor|tojson|safe }}; {% endif %}
     {% if asistentes_valor %} if (asistentesInput) asistentesInput.value = {{ asistentes_valor }}; {% endif %}
 
     aplicarLimite();
@@ -244,7 +293,7 @@
 
 <script>
   // Nombres desde el backend
-  const nombres = {{ nombres_grupo | tojson }};
+  const nombres = {{ nombres_json|safe }};
   const sugerencias = document.getElementById('sugerencias');
 
   function renderSugerencias(query){

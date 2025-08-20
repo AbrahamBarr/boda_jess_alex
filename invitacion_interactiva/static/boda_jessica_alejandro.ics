@@ -1,0 +1,15 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Invitación Boda J&A//ES
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+UID:boda-jya-0b9029ea-7c2c-4f5e-bedb-c8cf718f6136@jessalex
+DTSTAMP:20250820T004605Z
+SUMMARY:Boda de Jessica & Alejandro
+DESCRIPTION:Ceremonia Religiosa 17:30, Recepción 19:30, Cena 20:30, Celebración 21:30, Fin 3:00am.
+LOCATION:Guadalajara, Jalisco, México
+DTSTART;TZID=America/Mexico_City:20251115T173000
+DTEND;TZID=America/Mexico_City:20251116T030000
+END:VEVENT
+END:VCALENDAR

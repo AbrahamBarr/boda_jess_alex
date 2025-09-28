@@ -251,90 +251,85 @@
 
 
 <script>
-    // === Lógica para aplicar límite según Excel ===
-    const limites = {{ limites_json|safe }};
-    const nombreInput = document.getElementById('nombre');
-    const asistentesInput = document.getElementById('asistentes');
-    const hint = document.getElementById('hint-max');
+// === Lógica para aplicar límite según Excel ===
+  const limites = {{ limites_json|tojson|safe if limites_json is defined else '{}' }};
+  const nombreInput = document.getElementById('nombre');
+  const asistentesInput = document.getElementById('asistentes');
+  const hint = document.getElementById('hint-max');
 
-    function getMax(nombre) {
-        const key = Object.keys(limites).find(k => k.toLowerCase() === (nombre||'').toLowerCase());
-        return Number.isFinite(limites[key]) ? parseInt(limites[key], 10) : 0;
+  function getMax(nombre) {
+    const key = Object.keys(limites).find(k => k.toLowerCase() === (nombre||'').toLowerCase());
+    const n = key ? parseInt(limites[key], 10) : 0;
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function aplicarLimite() {
+    const nombre = (nombreInput?.value || '').trim();
+    const max = getMax(nombre);
+
+    if (asistentesInput) {
+      asistentesInput.setAttribute('max', max);
+      const val = parseInt(asistentesInput.value || '0', 10);
+      if (!Number.isNaN(val) && val > max) asistentesInput.value = max;
     }
-
-    function aplicarLimite() {
-        const nombre = (nombreInput?.value || '').trim();
-        const max = getMax(nombre);
-
-        if (asistentesInput) {
-            asistentesInput.setAttribute('max', max);
-            const val = parseInt(asistentesInput.value || '0', 10);
-            if (!Number.isNaN(val) && val > max) {
-                asistentesInput.value = max;
-            }
-        }
-        if (hint) {
-            hint.textContent = max > 0
-                ? `${nombre}, hemos reservado ${max} lugares en su honor.`
-                : (nombre ? `Verifique el nombre tal como se le indicó por mensaje.` : '');
-        }
+    if (hint) {
+      hint.textContent = max > 0
+        ? `${nombre}, hemos reservado ${max} lugares en su honor.`
+        : (nombre ? `Verifique el nombre tal como se le indicó por mensaje.` : '');
     }
+  }
 
-    nombreInput?.addEventListener('change', aplicarLimite);
-    nombreInput?.addEventListener('input', aplicarLimite);
-    nombreInput?.addEventListener('blur', aplicarLimite);
-    asistentesInput?.addEventListener('input', aplicarLimite);
+  nombreInput?.addEventListener('change', aplicarLimite);
+  nombreInput?.addEventListener('input', aplicarLimite);
+  nombreInput?.addEventListener('blur', aplicarLimite);
+  asistentesInput?.addEventListener('input', aplicarLimite);
 
-    {% if nombre_valor %} if (nombreInput) nombreInput.value = {{ nombre_valor|tojson|safe }}; {% endif %}
-    {% if asistentes_valor %} if (asistentesInput) asistentesInput.value = {{ asistentes_valor }}; {% endif %}
-
-    aplicarLimite();
+  {% if nombre_valor %} if (nombreInput) nombreInput.value = {{ nombre_valor|tojson|safe }}; {% endif %}
+  {% if asistentes_valor %} if (asistentesInput) asistentesInput.value = {{ asistentes_valor }}; {% endif %}
+  aplicarLimite();
 </script>
 
 <script>
-  // Nombres desde el backend
-  const nombres = {{ nombres_json|safe }};
-  const sugerencias = document.getElementById('sugerencias');
+// Debounce para no saturar el servidor
+function debounce(fn, ms){ let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); }; }
 
-  function renderSugerencias(query){
-    sugerencias.innerHTML = '';
-    if (!query) { sugerencias.hidden = true; return; }
+async function pedirSugerencias(q){
+  const r = await fetch('/api/sugerencias?q=' + encodeURIComponent(q));
+  const { sugerencias } = await r.json();
+  return Array.isArray(sugerencias) ? sugerencias : [];
+}
 
-    const q = query.toLowerCase();
-    // Muestra solo primeras 12 coincidencias
-    const hits = nombres.filter(n => n.toLowerCase().includes(q)).slice(0, 12);
+function renderListaSugerencias(lista){
+  const ul = document.getElementById('sugerencias');
+  ul.innerHTML = '';
+  if (!lista.length){ ul.hidden = true; return; }
 
-    if (hits.length === 0) { sugerencias.hidden = true; return; }
-
-    hits.forEach(nombre => {
-      const li = document.createElement('li');
-      li.textContent = nombre;
-      // Usamos mousedown para que no se pierda el foco del input antes del click
-      li.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        nombreInput.value = nombre;
-        sugerencias.hidden = true;
-        aplicarLimite(); // aplica el máximo al campo asistentes
-      });
-      sugerencias.appendChild(li);
+  lista.forEach(nombre => {
+    const li = document.createElement('li');
+    li.textContent = nombre;
+    li.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      nombreInput.value = nombre;
+      ul.hidden = true;
+      if (typeof aplicarLimite === 'function') aplicarLimite();
     });
-    sugerencias.hidden = false;
-  }
-
-  // Mostrar solo al escribir
-  nombreInput.addEventListener('input', () => renderSugerencias(nombreInput.value));
-
-  // Ocultar al hacer click fuera
-  document.addEventListener('click', (e) => {
-    if (!sugerencias.contains(e.target) && e.target !== nombreInput) {
-      sugerencias.hidden = true;
-    }
+    ul.appendChild(li);
   });
+  ul.hidden = false;
+}
 
-  // Ocultar al perder foco (un pequeño delay por si se hace click en una sugerencia)
-  nombreInput.addEventListener('blur', () => setTimeout(() => (sugerencias.hidden = true), 100));
+nombreInput.addEventListener('input', debounce(async () => {
+  const q = nombreInput.value || '';
+  if (q.trim().length < 2) { document.getElementById('sugerencias').hidden = true; return; }
+  const lista = await pedirSugerencias(q);
+  renderListaSugerencias(lista);
+}, 120));
+
+document.addEventListener('click', (e) => {
+  const ul = document.getElementById('sugerencias');
+  if (!ul.contains(e.target) && e.target !== nombreInput) ul.hidden = true;
+});
 </script>
-
 
 </body>
 </html>

@@ -10,6 +10,47 @@ import re
 import unicodedata
 from difflib import SequenceMatcher
 
+
+# --- Google Sheets helpers ---
+SHEET_ID = os.getenv("SHEET_ID", "")  # Coloca aquí el ID o usa variable de entorno
+
+def _gs_client():
+    import gspread
+    from google.oauth2.service_account import Credentials
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    # A) archivo JSON en /data/ (ajusta el nombre si tu archivo es otro)
+    sa_path = os.getenv("GCP_SA_FILE", "data/proyectojessalex-9a5ad4e5c9e2.json")
+    if os.path.isfile(sa_path):
+        creds = Credentials.from_service_account_file(sa_path, scopes=scopes)
+    else:
+        # B) o variable de entorno con el JSON COMPLETO
+        sa_json = os.getenv("GCP_SA_JSON", "")
+        if not sa_json:
+            raise RuntimeError("Faltan credenciales: define GCP_SA_FILE o GCP_SA_JSON")
+        info = json.loads(sa_json)
+        creds = Credentials.from_service_account_info(info, scopes=scopes)
+    return gspread.authorize(creds)
+
+def append_to_google_sheet(nombre: str, asistentes: int, timestamp: str, tab: str = "Confirmaciones"):
+    if not SHEET_ID:
+        return False, "SHEET_ID no configurado"
+    try:
+        gc = _gs_client()
+        sh = gc.open_by_key(SHEET_ID)
+        try:
+            ws = sh.worksheet(tab)
+        except Exception:
+            ws = sh.add_worksheet(title=tab, rows=200, cols=10)
+            ws.append_row(["Nombre", "Asistentes", "Fecha Confirmación"], value_input_option="USER_ENTERED")
+        ws.append_row([nombre, asistentes, timestamp], value_input_option="USER_ENTERED")
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
 os.makedirs("data", exist_ok=True)
 
 app = FastAPI()
@@ -41,6 +82,19 @@ def normalize(s: str) -> str:
 
 # Índice normalizado para sugerencias rápidas
 INDEX = [{"raw": nombre, "n": normalize(nombre)} for nombre in NOMBRES_GRUPO]
+
+def resolve_canonico_y_max(nombre: str):
+    qn = normalize(nombre)
+    # exacto por normalización
+    for k, v in BOLETOS_POR_GRUPO.items():
+        if normalize(k) == qn:
+            return k, int(v)
+    # fallback: contiene
+    for k, v in BOLETOS_POR_GRUPO.items():
+        if qn and qn in normalize(k):
+            return k, int(v)
+    return None, 0
+
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -89,13 +143,17 @@ def api_sugerencias(q: str = Query("", min_length=0)):
 
 @app.post("/confirmar", response_class=HTMLResponse)
 async def confirmar(request: Request, nombre: str = Form(...), asistentes: int = Form(...)):
-    max_permitido = int(BOLETOS_POR_GRUPO.get(nombre, 0))
+    # usar nombre canónico y límite correcto
+    canonico, max_permitido = resolve_canonico_y_max(nombre)
+    if canonico is None:
+        max_permitido = 0
+
     if asistentes > max_permitido:
         return templates.TemplateResponse("invitacion.html", {
             "request": request,
             "nombres_grupo": NOMBRES_GRUPO,
             "nombres_idx_json": INDEX,
-            "limites_json": BOLETOS_POR_GRUPO,
+            "limites_json": BOLETOS_POR_GRUPO,   # dict (tu HTML ya usa |tojson)
             "event_date": "2025-11-15",
             "error": f"El máximo permitido para {nombre} es {max_permitido}.",
             "nombre_valor": nombre,
@@ -104,11 +162,19 @@ async def confirmar(request: Request, nombre: str = Form(...), asistentes: int =
 
     # === Guardar en Excel (data/confirmaciones.xlsx) ===
     excel_path = "data/confirmaciones.xlsx"
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     fila = {
-        "Nombre": nombre,
+        "Nombre": canonico or nombre,              # guardamos canónico si existe
         "Asistentes": int(asistentes),
-        "Fecha Confirmación": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "Fecha Confirmación": ts
     }
+
+
+    # === Anexar a Google Sheets ===
+    ok, err = append_to_google_sheet(fila["Nombre"], fila["Asistentes"], fila["Fecha Confirmación"])
+    if not ok:
+        print(f"[SHEETS][ERROR] {err}", flush=True)
+
 
     saved_to = None
     try:
@@ -213,3 +279,31 @@ def descargar_confirmaciones(formato: str = "excel"):
         if os.path.exists(csvf):
             return FileResponse(csvf, media_type="text/csv", filename="confirmaciones.csv")
         return HTMLResponse("<h3>No hay archivos de confirmaciones aún.</h3>", status_code=404)
+    
+
+
+@app.get("/admin/test-sheets")
+def test_sheets():
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ok, err = append_to_google_sheet("TEST - salud", 1, ts)
+    return {"ok": ok, "error": err, "timestamp": ts}
+
+@app.get("/admin/peek-sheets")
+def peek_sheets():
+    try:
+        gc = _gs_client()
+        sh = gc.open_by_key(SHEET_ID)
+        ws = sh.worksheet("Confirmaciones")
+        return {"ok": True, "rows": ws.get_all_values()[-10:]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@app.get("/admin/whoami")
+def whoami():
+    try:
+        path = os.getenv("GCP_SA_FILE", "data/proyectojessalex-9a5ad4e5c9e2.json")
+        info = json.load(open(path, "r", encoding="utf-8")) if os.path.isfile(path) else json.loads(os.getenv("GCP_SA_JSON","{}"))
+        return {"client_email": info.get("client_email"), "project_id": info.get("project_id"), "sheet_id": SHEET_ID}
+    except Exception as e:
+        return {"error": str(e), "sheet_id": SHEET_ID}
+

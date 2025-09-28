@@ -251,15 +251,34 @@
 
 
 <script>
-// === Lógica para aplicar límite según Excel ===
+  // === Lógica para aplicar límite según Excel (robusta) ===
   const limites = {{ limites_json|tojson|safe if limites_json is defined else '{}' }};
   const nombreInput = document.getElementById('nombre');
   const asistentesInput = document.getElementById('asistentes');
   const hint = document.getElementById('hint-max');
 
+  // Normaliza por si hay espacios/acentos accidentales
+  function norm(s){
+    return (s||'')
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/\bfam\.?\b/g, 'familia')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   function getMax(nombre) {
-    const key = Object.keys(limites).find(k => k.toLowerCase() === (nombre||'').toLowerCase());
-    const n = key ? parseInt(limites[key], 10) : 0;
+    const q = norm(nombre);
+    if (!q) return 0;
+
+    // match exacto por normalización
+    let key = Object.keys(limites).find(k => norm(k) === q);
+    // fallback: contiene (por si hubo mínima variación)
+    if (!key) key = Object.keys(limites).find(k => norm(k).includes(q));
+
+    const raw = key ? limites[key] : 0;
+    const n = parseInt(raw, 10);
     return Number.isFinite(n) ? n : 0;
   }
 
@@ -268,13 +287,22 @@
     const max = getMax(nombre);
 
     if (asistentesInput) {
-      asistentesInput.setAttribute('max', max);
-      const val = parseInt(asistentesInput.value || '0', 10);
-      if (!Number.isNaN(val) && val > max) asistentesInput.value = max;
+      // 🚫 NO pongas max=0; deja libre hasta que haya match
+      if (max > 0) {
+        asistentesInput.setAttribute('max', max);
+        // corrige si ya se pasó
+        const val = parseInt(asistentesInput.value || '0', 10);
+        if (!Number.isNaN(val) && val > max) asistentesInput.value = max;
+        // si está vacío, sugiere 1
+        if (!asistentesInput.value) asistentesInput.value = 1;
+      } else {
+        asistentesInput.removeAttribute('max');
+      }
     }
+
     if (hint) {
-      hint.textContent = max > 0
-        ? `${nombre}, hemos reservado ${max} lugares en su honor.`
+      hint.textContent = (max > 0 && nombre)
+        ? `${nombre}, hemos reservado ${max} lugar(es) en su honor.`
         : (nombre ? `Verifique el nombre tal como se le indicó por mensaje.` : '');
     }
   }
@@ -288,6 +316,7 @@
   {% if asistentes_valor %} if (asistentesInput) asistentesInput.value = {{ asistentes_valor }}; {% endif %}
   aplicarLimite();
 </script>
+
 
 <script>
 // Debounce para no saturar el servidor

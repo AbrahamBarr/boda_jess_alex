@@ -49,8 +49,8 @@ async def home(request: Request):
         "request": request,
         "nombres_grupo": NOMBRES_GRUPO,
         # índice por si quieres filtrar client-side con JS
-        "nombres_idx_json": json.dumps(INDEX, ensure_ascii=False),
-        "limites_json": json.dumps(BOLETOS_POR_GRUPO, ensure_ascii=False),
+        "nombres_idx_json": INDEX,
+        "limites_json": BOLETOS_POR_GRUPO,
         "event_date": "2025-11-15"
     })
 
@@ -94,8 +94,8 @@ async def confirmar(request: Request, nombre: str = Form(...), asistentes: int =
         return templates.TemplateResponse("invitacion.html", {
             "request": request,
             "nombres_grupo": NOMBRES_GRUPO,
-            "nombres_idx_json": json.dumps(INDEX, ensure_ascii=False),
-            "limites_json": json.dumps(BOLETOS_POR_GRUPO, ensure_ascii=False),
+            "nombres_idx_json": INDEX,
+            "limites_json": BOLETOS_POR_GRUPO,
             "event_date": "2025-11-15",
             "error": f"El máximo permitido para {nombre} es {max_permitido}.",
             "nombre_valor": nombre,

@@ -1,112 +1,91 @@
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+from fastapi import FastAPI, Form, Request, Query
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import pandas as pd
 from datetime import datetime
 import os
 import json
-import io
-import pytz
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
+import re
+import unicodedata
+from difflib import SequenceMatcher
 
+os.makedirs("data", exist_ok=True)
 
-os.makedirs("data", exist_ok=True)  
-
-TIMEZONE = pytz.timezone("America/Mexico_City")
-SHEET_ID = os.getenv("SHEET_ID")                      # requerido
-SHEET_RANGE = os.getenv("SHEET_RANGE", "Respuestas!A:C")  # A:Nombre, B:Asistentes, C:Fecha Confirmación
-
-def _sheets_service():
-    """Crea el cliente de Google Sheets desde la variable de entorno GCP_SA_KEY."""
-    gcp_sa_key = os.getenv("GCP_SA_KEY")
-    if not gcp_sa_key:
-        raise RuntimeError("Falta la variable de entorno GCP_SA_KEY")
-    try:
-        key_dict = json.loads(gcp_sa_key)
-    except json.JSONDecodeError as e:
-        raise RuntimeError("GCP_SA_KEY no es JSON válido. Verifica que pegaste el JSON completo.") from e
-
-    creds = service_account.Credentials.from_service_account_info(
-        key_dict,
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
-    )
-    return build("sheets", "v4", credentials=creds)
-
-def append_to_sheet_row(nombre: str, asistentes: int, fecha_str: str):
-    """Agrega una fila al Sheet en el orden: [Nombre, Asistentes, Fecha Confirmación]."""
-    if not SHEET_ID:
-        raise RuntimeError("Falta SHEET_ID")
-    service = _sheets_service()
-    body = {"values": [[nombre, asistentes, fecha_str]]}
-    return service.spreadsheets().values().append(
-        spreadsheetId=SHEET_ID,
-        range=SHEET_RANGE,
-        valueInputOption="USER_ENTERED",
-        insertDataOption="INSERT_ROWS",
-        body=body
-    ).execute()
-
-def read_sheet_as_df() -> pd.DataFrame:
-    """
-    Lee el rango configurado y devuelve un DataFrame con columnas:
-    ['Nombre', 'Asistentes', 'Fecha Confirmación'].
-    Si la primera fila son encabezados, se respetan; si no, se asignan.
-    """
-    if not SHEET_ID:
-        raise RuntimeError("Falta SHEET_ID")
-    service = _sheets_service()
-    resp = service.spreadsheets().values().get(
-        spreadsheetId=SHEET_ID,
-        range=SHEET_RANGE
-    ).execute()
-    values = resp.get("values", [])
-
-    if not values:
-        return pd.DataFrame(columns=["Nombre", "Asistentes", "Fecha Confirmación"])
-
-    # ¿La primera fila parece encabezado?
-    header_candidate = [c.strip().lower() for c in values[0]]
-    expected = ["nombre", "asistentes", "fecha confirmación"]
-    if all(h in expected for h in header_candidate) and len(values) > 1:
-        df = pd.DataFrame(values[1:], columns=[c.strip() for c in values[0]])
-    else:
-        # Sin encabezado, asignar columnas
-        df = pd.DataFrame(values, columns=["Nombre", "Asistentes", "Fecha Confirmación"][:len(values[0])])
-
-    # Normalizaciones
-    if "Asistentes" in df.columns:
-        df["Asistentes"] = pd.to_numeric(df["Asistentes"], errors="coerce").fillna(0).astype(int)
-    if "Fecha Confirmación" in df.columns:
-        # no forzar formato; se muestra como texto tal cual fue capturado
-        pass
-
-    return df
-
-# --------------------------------------------------------------------
-# App FastAPI
-# --------------------------------------------------------------------
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# Cargar datos de Excel (invitados) para validar máximos
-df_invitados = pd.read_excel("data/invitados.xlsx")
-df_invitados["Grupo"] = df_invitados["Invitación dirigida a"].ffill()
-df_invitados["MaxBoletos_num"] = pd.to_numeric(df_invitados["Max Boletos"], errors="coerce").fillna(0).astype(int)
+# -----------------------------
+# Carga de Excel y estructura
+# -----------------------------
+df = pd.read_excel("data/invitados.xlsx")
+# Tomamos el grupo (familia/invitación) y el máximo de boletos por grupo
+df["Grupo"] = df["Invitación dirigida a"].ffill()
+df["MaxBoletos_num"] = pd.to_numeric(df["Max Boletos"], errors="coerce").fillna(0).astype(int)
 
-BOLETOS_POR_GRUPO = df_invitados.groupby("Grupo")["MaxBoletos_num"].max().to_dict()
+BOLETOS_POR_GRUPO = df.groupby("Grupo")["MaxBoletos_num"].max().to_dict()
 NOMBRES_GRUPO = sorted([g for g in BOLETOS_POR_GRUPO.keys() if isinstance(g, str)])
+
+# -----------------------------
+# Normalización para búsquedas
+# -----------------------------
+def normalize(s: str) -> str:
+    s = (s or "").lower()
+    s = unicodedata.normalize("NFD", s)
+    s = re.sub(r"[\u0300-\u036f]", "", s)          # quita acentos
+    s = re.sub(r"\bfam\.?\b", "familia", s)        # fam./fam -> familia
+    s = re.sub(r"[^a-z0-9\s]", " ", s)             # fuera signos
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+# Índice normalizado para sugerencias rápidas
+INDEX = [{"raw": nombre, "n": normalize(nombre)} for nombre in NOMBRES_GRUPO]
+
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("invitacion.html", {
         "request": request,
         "nombres_grupo": NOMBRES_GRUPO,
+        # índice por si quieres filtrar client-side con JS
+        "nombres_idx_json": json.dumps(INDEX, ensure_ascii=False),
         "limites_json": json.dumps(BOLETOS_POR_GRUPO, ensure_ascii=False),
         "event_date": "2025-11-15"
     })
+
+@app.get("/api/sugerencias")
+def api_sugerencias(q: str = Query("", min_length=0)):
+    qn = normalize(q)
+    if len(qn) < 2:
+        return {"sugerencias": []}
+
+    tokens = [t for t in qn.split() if t]
+    resultados = []
+    for item in INDEX:
+        n = item["n"]
+        # 1) Debe contener todos los tokens (búsqueda tolerante)
+        if not all(t in n for t in tokens):
+            continue
+        # 2) Scoring sencillo: prefijo + similitud difusa
+        prefix = 1 if n.startswith(qn) else 0
+        ratio = SequenceMatcher(None, qn, n).ratio()  # 0..1
+        score = prefix * 2 + ratio
+        resultados.append((score, item["raw"]))
+
+    # Si no hubo matches por tokens
+    if not resultados:
+        for item in INDEX:
+            n = item["n"]
+            ratio = SequenceMatcher(None, qn, n).ratio()
+            if ratio >= 0.45:  # umbral laxo
+                prefix = 1 if n.startswith(qn) else 0
+                score = prefix * 2 + ratio
+                resultados.append((score, item["raw"]))
+
+    resultados.sort(key=lambda x: (-x[0], x[1].lower()))
+    top = [r[1] for r in resultados[:12]]
+    return {"sugerencias": top}
 
 @app.post("/confirmar", response_class=HTMLResponse)
 async def confirmar(request: Request, nombre: str = Form(...), asistentes: int = Form(...)):
@@ -115,6 +94,7 @@ async def confirmar(request: Request, nombre: str = Form(...), asistentes: int =
         return templates.TemplateResponse("invitacion.html", {
             "request": request,
             "nombres_grupo": NOMBRES_GRUPO,
+            "nombres_idx_json": json.dumps(INDEX, ensure_ascii=False),
             "limites_json": json.dumps(BOLETOS_POR_GRUPO, ensure_ascii=False),
             "event_date": "2025-11-15",
             "error": f"El máximo permitido para {nombre} es {max_permitido}.",
@@ -122,27 +102,34 @@ async def confirmar(request: Request, nombre: str = Form(...), asistentes: int =
             "asistentes_valor": max_permitido
         }, status_code=400)
 
-    # --- NUEVO: Guardar directamente en Google Sheets ---
-    fecha_str = datetime.now(TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
+    # === Guardar en Excel (data/confirmaciones.xlsx) ===
+    excel_path = "data/confirmaciones.xlsx"
+    fila = {
+        "Nombre": nombre,
+        "Asistentes": int(asistentes),
+        "Fecha Confirmación": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    saved_to = None
     try:
-        append_to_sheet_row(nombre=nombre, asistentes=int(asistentes), fecha_str=fecha_str)
-        saved_to = "google_sheets"
+        if os.path.exists(excel_path):
+            df_conf = pd.read_excel(excel_path)
+            df_conf = pd.concat([df_conf, pd.DataFrame([fila])], ignore_index=True)
+        else:
+            df_conf = pd.DataFrame([fila])
+        df_conf.to_excel(excel_path, index=False)
+        saved_to = "xlsx"
     except Exception as e:
-        # Si falla, registramos en logs y como último recurso guardamos CSV local (solo local dev)
-        print(f"[CONFIRMACION][ERROR_SHEETS] {e}", flush=True)
-        try:
-            import csv
-            csv_path = "data/confirmaciones.csv"
-            existe = os.path.isfile(csv_path)
-            with open(csv_path, mode="a", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                if not existe:
-                    writer.writerow(["Nombre", "Asistentes", "Fecha Confirmación"])
-                writer.writerow([nombre, int(asistentes), fecha_str])
-            saved_to = "csv_local"
-        except Exception as e2:
-            print(f"[CONFIRMACION][ERROR_FALLBACK_CSV] {e2}", flush=True)
-            saved_to = "none"
+        import csv
+        csv_path = "data/confirmaciones.csv"
+        existe = os.path.isfile(csv_path)
+        with open(csv_path, mode="a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if not existe:
+                writer.writerow(["Nombre", "Asistentes", "Fecha Confirmación"])
+            writer.writerow([fila["Nombre"], fila["Asistentes"], fila["Fecha Confirmación"]])
+        saved_to = "csv"
+        print(f"[CONFIRMACION][ERROR_XLSX] {e}", flush=True)
 
     print(f"[CONFIRMACION] nombre={nombre} asistentes={asistentes} saved_to={saved_to} at={datetime.now()}", flush=True)
 
@@ -154,15 +141,24 @@ async def confirmar(request: Request, nombre: str = Form(...), asistentes: int =
 
 @app.get("/admin/confirmaciones", response_class=HTMLResponse)
 def admin_confirmaciones(request: Request):
-    # --- NUEVO: leer directamente desde Google Sheets ---
-    try:
-        df = read_sheet_as_df()
-    except Exception as e:
-        print(f"[ADMIN][ERROR_READ_SHEETS] {e}", flush=True)
-        # Fallback a CSV local si existiera (sólo local dev)
-        csvf = "data/confirmaciones.csv"
+    excel = "data/confirmaciones.xlsx"
+    csvf = "data/confirmaciones.csv"
+
+    df = None
+    if os.path.exists(excel):
+        try:
+            df = pd.read_excel(excel)
+        except Exception:
+            df = None
+    if df is None:
         if os.path.exists(csvf):
-            df = pd.read_csv(csvf)
+            import csv
+            with open(csvf, "r", encoding="utf-8") as f:
+                first = f.readline()
+            header = 0 if first.strip().startswith("Nombre,") else None
+            df = pd.read_csv(csvf, header=header)
+            if header is None:
+                df.columns = ["Nombre", "Asistentes", "Fecha Confirmación"]
         else:
             df = pd.DataFrame(columns=["Nombre", "Asistentes", "Fecha Confirmación"])
 
@@ -174,11 +170,7 @@ def admin_confirmaciones(request: Request):
 
     filas = []
     for _, r in df.fillna("").iterrows():
-        filas.append(
-            f"<tr><td>{r.get('Nombre','')}</td>"
-            f"<td>{r.get('Asistentes','')}</td>"
-            f"<td>{r.get('Fecha Confirmación','')}</td></tr>"
-        )
+        filas.append(f"<tr><td>{r.get('Nombre','')}</td><td>{r.get('Asistentes','')}</td><td>{r.get('Fecha Confirmación','')}</td></tr>")
 
     html = f"""
     <html><head><meta charset="utf-8"><title>Confirmaciones</title>
@@ -208,28 +200,16 @@ def admin_confirmaciones(request: Request):
 
 @app.get("/admin/descargar")
 def descargar_confirmaciones(formato: str = "excel"):
-    # --- NUEVO: descarga a partir de Google Sheets ---
-    try:
-        df = read_sheet_as_df()
-    except Exception as e:
-        print(f"[ADMIN][ERROR_READ_SHEETS_FOR_DOWNLOAD] {e}", flush=True)
-        df = pd.DataFrame(columns=["Nombre", "Asistentes", "Fecha Confirmación"])
+    excel = "data/confirmaciones.xlsx"
+    csvf = "data/confirmaciones.csv"
 
-    if formato == "csv":
-        csv_bytes = df.to_csv(index=False).encode("utf-8")
-        return StreamingResponse(
-            io.BytesIO(csv_bytes),
-            media_type="text/csv",
-            headers={"Content-Disposition": 'attachment; filename="confirmaciones.csv"'}
-        )
+    if formato == "excel" and os.path.exists(excel):
+        return FileResponse(excel, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename="confirmaciones.xlsx")
+    elif formato == "csv" and os.path.exists(csvf):
+        return FileResponse(csvf, media_type="text/csv", filename="confirmaciones.csv")
     else:
-        # Excel
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="Confirmaciones")
-        output.seek(0)
-        return StreamingResponse(
-            output,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": 'attachment; filename="confirmaciones.xlsx"'}
-        )
+        if os.path.exists(excel):
+            return FileResponse(excel, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename="confirmaciones.xlsx")
+        if os.path.exists(csvf):
+            return FileResponse(csvf, media_type="text/csv", filename="confirmaciones.csv")
+        return HTMLResponse("<h3>No hay archivos de confirmaciones aún.</h3>", status_code=404)
